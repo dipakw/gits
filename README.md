@@ -164,3 +164,10 @@ func main() {
 ## Status
 
 This library is still in development, so there are many things to be enhanced. However, it works and does the features mentioned above.
+
+
+## V2 Ref
+
+```
+https://web.mit.edu/git/www/gitprotocol-v2.html
+```
