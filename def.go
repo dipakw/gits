@@ -69,6 +69,8 @@ type Object struct {
 type Negotiation struct {
 	Wants map[string]bool
 	Haves map[string]bool
+	Caps  map[string]bool
+	Agent string
 	Done  bool
 	EOF   bool
 }
