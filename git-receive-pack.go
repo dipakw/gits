@@ -43,7 +43,7 @@ func (repo *Repo) ReceivePack(r io.Reader, w io.Writer, cb func()) error {
 	}
 
 	for _, ref := range refs {
-		repo.fs.WriteFile(ref[0], []byte(ref[2]))
+		repo.fs.WriteFile(repo.absPath(ref[0]), []byte(ref[2]))
 	}
 
 	res := prepSuccessRes(refs)

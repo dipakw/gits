@@ -9,7 +9,7 @@ import (
 )
 
 func (r *Repo) Object(hash string) (*Object, error) {
-	path := fmt.Sprintf("objects/%s/%s", hash[:2], hash[2:])
+	path := r.absPath(fmt.Sprintf("objects/%s/%s", hash[:2], hash[2:]))
 
 	content, err := r.fs.ReadFile(path)
 

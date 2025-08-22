@@ -81,7 +81,7 @@ func (repo *Repo) Unpack(br *bufio.Reader) error {
 			return err
 		}
 
-		objpath := fmt.Sprintf("objects/%s/%s", hashHex[:2], hashHex[2:])
+		objpath := repo.absPath(fmt.Sprintf("objects/%s/%s", hashHex[:2], hashHex[2:]))
 
 		if err := repo.fs.WriteFile(objpath, compressed); err != nil {
 			return err

@@ -18,11 +18,7 @@ func OpenRepo(conf *Config) (*Repo, error) {
 		r.fs, err = conf.FS(conf.Dir)
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
-	return r, r.fs.Cd(conf.Name)
+	return r, err
 }
 
 func InitRepo(conf *Config) (*Repo, error) {
@@ -42,19 +38,14 @@ func InitRepo(conf *Config) (*Repo, error) {
 		return nil, err
 	}
 
-	stat := r.fs.Stat(conf.Name)
+	dir := r.absPath(conf.Name)
+	stat := r.fs.Stat(dir)
 
 	if stat[0] != 0 {
 		return nil, fmt.Errorf("repo '%s' already exists", conf.Name)
 	}
 
-	err = r.fs.Mkdir(conf.Name)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return r, r.fs.Cd(conf.Name)
+	return r, r.fs.Mkdir(dir)
 }
 
 // Helpers.
