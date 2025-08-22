@@ -1,6 +1,9 @@
 package gits
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func OpenRepo(conf *Config) (*Repo, error) {
 	r := &Repo{
@@ -52,4 +55,9 @@ func InitRepo(conf *Config) (*Repo, error) {
 	}
 
 	return r, r.fs.Cd(conf.Name)
+}
+
+// Helpers.
+func (repo *Repo) absPath(path string) string {
+	return "/" + repo.conf.Name + "/" + strings.Trim(path, "/")
 }

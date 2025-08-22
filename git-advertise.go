@@ -8,21 +8,22 @@ import (
 	"strings"
 )
 
-func (repo *Repo) Advertise(r io.Reader, w io.Writer, service string, cb func()) error {
+func (repo *Repo) Advertise(r io.Reader, w io.Writer, service string, cb func()) ([]byte, error) {
 	if service != "git-upload-pack" && service != "git-receive-pack" {
-		return fmt.Errorf("unsupported service: %s", service)
+		return nil, fmt.Errorf("unsupported service: %s", service)
 	}
 
 	var refs = map[string][]int{}
 	var err error
 
-	refsStat := repo.fs.Stat("refs")
+	refsPath := repo.absPath("refs")
+	refsStat := repo.fs.Stat(refsPath)
 
 	if refsStat[0] == 2 {
-		refs, err = repo.fs.Scan("refs", FS_TYPE_FILE, -1)
+		refs, err = repo.fs.Scan(refsPath, FS_TYPE_FILE, -1)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -38,7 +39,7 @@ func (repo *Repo) Advertise(r io.Reader, w io.Writer, service string, cb func())
 	head, err := repo.getHead()
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	beforeNull := fmt.Sprintf("%s %s", head.Hash, ternary(head.NoHead, "", "HEAD"))
@@ -52,14 +53,16 @@ func (repo *Repo) Advertise(r io.Reader, w io.Writer, service string, cb func())
 	buf.Write(pktLine(line))
 
 	// Write refs.
+	// refname = /<dir>/refs/<refname>
 	for refname := range refs {
 		hash, err := repo.fs.ReadFile(refname)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		buf.Write(pktLine(fmt.Sprintf("%s %s\n", hash, refname)))
+		advRef := fmt.Sprintf("refs%s", refname[len(refsPath):])
+		buf.Write(pktLine(fmt.Sprintf("%s %s\n", strings.Trim(string(hash), "\n"), advRef)))
 	}
 
 	// Write flush.
@@ -69,15 +72,18 @@ func (repo *Repo) Advertise(r io.Reader, w io.Writer, service string, cb func())
 		cb()
 	}
 
-	if _, err := w.Write(buf.Bytes()); err != nil {
-		return err
+	if w != nil {
+		if _, err := w.Write(buf.Bytes()); err != nil {
+			return nil, err
+		}
 	}
 
-	return nil
+	return buf.Bytes(), nil
 }
 
 func (r *Repo) getHead() (*Head, error) {
-	headStat := r.fs.Stat("HEAD")
+	headFile := r.absPath("HEAD")
+	headStat := r.fs.Stat(headFile)
 
 	if headStat[0] != 1 {
 		head := &Head{
@@ -88,7 +94,7 @@ func (r *Repo) getHead() (*Head, error) {
 		return head, nil
 	}
 
-	headBytes, err := r.fs.ReadFile("HEAD")
+	headBytes, err := r.fs.ReadFile(headFile)
 
 	if err != nil {
 		return nil, err
@@ -96,13 +102,14 @@ func (r *Repo) getHead() (*Head, error) {
 
 	head := &Head{}
 	solved := false
-	headStr := string(headBytes)
+	headStr := strings.TrimSpace(string(headBytes))
 
 	// 1. First test if the head is a ref.
 	if strings.HasPrefix(headStr, "ref: ") {
 		head.Ref = strings.TrimPrefix(headStr, "ref: ")
 
-		stat := r.fs.Stat(head.Ref)
+		refFile := r.absPath(head.Ref)
+		stat := r.fs.Stat(refFile)
 
 		// File not found, or size is 0.
 		if stat[0] == 0 || stat[1] == 0 {
@@ -112,13 +119,13 @@ func (r *Repo) getHead() (*Head, error) {
 
 		// File found
 		if stat[0] == 1 {
-			refHash, err := r.fs.ReadFile(head.Ref)
+			refHash, err := r.fs.ReadFile(refFile)
 
 			if err != nil {
 				return nil, err
 			}
 
-			head.Hash = string(refHash)
+			head.Hash = strings.TrimSpace(string(refHash))
 		}
 
 		solved = true
