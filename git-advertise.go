@@ -19,7 +19,7 @@ func (repo *Repo) Advertise(r io.Reader, w io.Writer, service string, cb func())
 	refsStat := repo.fs.Stat("refs")
 
 	if refsStat[0] == 2 {
-		refs, err = repo.fs.Scan("refs", -1)
+		refs, err = repo.fs.Scan("refs", FS_TYPE_FILE, -1)
 
 		if err != nil {
 			return err

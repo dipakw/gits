@@ -45,7 +45,7 @@ func InitRepo(conf *Config) (*Repo, error) {
 		return nil, fmt.Errorf("repo '%s' already exists", conf.Name)
 	}
 
-	err = r.fs.MkdirAll(conf.Name)
+	err = r.fs.Mkdir(conf.Name)
 
 	if err != nil {
 		return nil, err

@@ -2,7 +2,6 @@ package gits
 
 import (
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,19 +9,133 @@ import (
 
 type DiskFS struct {
 	root string
+	dir  string
 }
 
 func NewDiskFS(root string) (FS, error) {
-	disk := &DiskFS{}
+	disk := &DiskFS{
+		dir: "/",
+	}
 
-	if err := disk.SetRoot(root); err != nil {
+	if err := disk.setRoot(root); err != nil {
 		return nil, err
 	}
 
 	return disk, nil
 }
 
-func (d *DiskFS) SetRoot(path string) error {
+func (d *DiskFS) ReadFile(path string) ([]byte, error) {
+	return os.ReadFile(d.abs(path))
+}
+
+func (d *DiskFS) WriteFile(path string, data []byte) error {
+	full := d.abs(path)
+
+	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile(full, data, 0644)
+}
+
+func (d *DiskFS) Scan(path string, include uint8, level int) (map[string][]int, error) {
+	result := make(map[string][]int)
+
+	if include == 0 {
+		return result, nil
+	}
+
+	includeDirs := include&FS_TYPE_DIR != 0
+	includeFiles := include&FS_TYPE_FILE != 0
+
+	root := d.abs(path)
+	prefix := path
+
+	var walk func(curr string, depth int) error
+
+	walk = func(curr string, depth int) error {
+		entries, err := os.ReadDir(curr)
+		if err != nil {
+			return err
+		}
+
+		for _, entry := range entries {
+			fullPath := filepath.Join(curr, entry.Name())
+			relPath, _ := filepath.Rel(root, fullPath)
+			key := filepath.ToSlash(filepath.Join(prefix, relPath))
+
+			if entry.IsDir() {
+				if includeDirs {
+					result[key] = []int{2, 0}
+				}
+
+				// if level == -1 => unlimited depth
+				if level == -1 || depth < level {
+					if err := walk(fullPath, depth+1); err != nil {
+						return err
+					}
+				}
+			} else if includeFiles {
+				info, err := entry.Info()
+
+				if err != nil {
+					return err
+				}
+
+				result[key] = []int{1, int(info.Size())}
+			}
+		}
+
+		return nil
+	}
+
+	if err := walk(root, 0); err != nil {
+		return map[string][]int{}, err
+	}
+
+	return result, nil
+}
+
+func (d *DiskFS) Stat(path string) []int {
+	full := d.abs(path)
+	info, err := os.Stat(full)
+
+	if errors.Is(err, os.ErrNotExist) {
+		return []int{0, 0} // not found
+	}
+
+	if err != nil {
+		// If there's an unexpected error, treat as not found
+		return []int{0, 0}
+	}
+
+	if info.IsDir() {
+		return []int{2, int(info.Size())}
+	}
+
+	return []int{1, int(info.Size())}
+}
+
+func (d *DiskFS) Mkdir(path string) error {
+	return os.MkdirAll(d.abs(path), 0755)
+}
+
+func (d *DiskFS) Cd(path string) error {
+	if strings.HasPrefix(path, "/") {
+		d.dir = path
+	} else {
+		d.dir = filepath.Join(d.dir, path)
+	}
+
+	return nil
+}
+
+func (d *DiskFS) Pwd() string {
+	return d.dir
+}
+
+// Helper functions.
+func (d *DiskFS) setRoot(path string) error {
 	absPath, err := filepath.Abs(path)
 
 	if err != nil {
@@ -44,7 +157,7 @@ func (d *DiskFS) SetRoot(path string) error {
 	return nil
 }
 
-func (d *DiskFS) Abs(path string) string {
+func (d *DiskFS) abs(path string) string {
 	// Remove null bytes and control chars
 	path = strings.Map(func(r rune) rune {
 		if r < 32 || r == '\x00' {
@@ -56,128 +169,11 @@ func (d *DiskFS) Abs(path string) string {
 	// Normalize
 	clean := filepath.Clean(path)
 
-	if !filepath.IsAbs(clean) {
+	if strings.HasPrefix(clean, "/") {
 		clean = filepath.Join(d.root, clean)
+	} else {
+		clean = filepath.Join(d.root, d.dir, clean)
 	}
+
 	return clean
-}
-
-func (d *DiskFS) ReadFile(path string) ([]byte, error) {
-	filepath := d.Abs(path)
-	return os.ReadFile(filepath)
-}
-
-func (d *DiskFS) WriteFile(path string, data []byte) error {
-	full := d.Abs(path)
-
-	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
-		return err
-	}
-
-	return os.WriteFile(full, data, 0644)
-}
-
-func (d *DiskFS) ReadBatch(paths []string) (map[string][]byte, error) {
-	result := make(map[string][]byte)
-
-	for _, p := range paths {
-		data, err := d.ReadFile(p)
-		if err != nil {
-			return nil, err
-		}
-		result[p] = data
-	}
-
-	return result, nil
-}
-
-func (d *DiskFS) WriteBatch(data map[string][]byte) error {
-	for p, content := range data {
-		if err := d.WriteFile(p, content); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (d *DiskFS) Scan(path string, level int) (map[string][]int, error) {
-	// Trim left /
-	path = strings.TrimPrefix(path, "/")
-	// Trim right /
-	path = strings.TrimSuffix(path, "/")
-
-	result := make(map[string][]int)
-	base := d.Abs(path)
-
-	err := filepath.WalkDir(base, func(p string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if p == base {
-			return nil // skip root itself
-		}
-
-		rel, _ := filepath.Rel(base, p)
-
-		// Apply depth restriction if level >= 0
-		if level >= 0 {
-			depth := len(strings.Split(rel, string(os.PathSeparator))) - 1
-			if depth > level {
-				if entry.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-		}
-
-		if !entry.IsDir() {
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
-
-			// Prepend the passed `path` to the relative path
-			key := filepath.Join(path, rel)
-			result[key] = []int{1, int(info.Size())} // TYPE=1 for file
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
-
-func (d *DiskFS) Stat(path string) []int {
-	full := d.Abs(path)
-	info, err := os.Stat(full)
-
-	if errors.Is(err, os.ErrNotExist) {
-		return []int{0, 0} // not found
-	}
-
-	if err != nil {
-		// If there's an unexpected error, treat as not found
-		return []int{0, 0}
-	}
-
-	if info.IsDir() {
-		return []int{2, int(info.Size())}
-	}
-
-	return []int{1, int(info.Size())}
-}
-
-func (d *DiskFS) MkdirAll(path string) error {
-	full := d.Abs(path)
-	return os.MkdirAll(full, 0755)
-}
-
-func (d *DiskFS) Cd(path string) error {
-	return d.SetRoot(d.Abs(path))
 }

@@ -38,6 +38,12 @@ var ADVERTISE_CAPS = []string{
 	"agent=gits/dev",
 }
 
+const (
+	FS_TYPE_FILE = 1
+	FS_TYPE_DIR  = 2
+	FS_TYPE_ALL  = FS_TYPE_FILE | FS_TYPE_DIR
+)
+
 type Head struct {
 	NoHead   bool   // If the head is not found.
 	Detached bool   // Head contains hash.
@@ -84,35 +90,26 @@ type DeltaOp struct {
 
 // ///////// Interfaces ///////////
 type FS interface {
-	// Set the root path of the FS
-	SetRoot(path string) error
-
 	// Read a single file from the FS
 	ReadFile(path string) ([]byte, error)
 
 	// Write a single file to the FS
 	WriteFile(path string, data []byte) error
 
-	// Read batch of files from the FS
-	ReadBatch(paths []string) (map[string][]byte, error)
-
-	// Write batch of files to the FS
-	WriteBatch(data map[string][]byte) error
-
 	// [name]: [TYPE, SIZE] -> [TYPE: 1 = file, 2 = dir, SIZE: size in bytes]
 	// If level is -1, scan all files and directories
 	// It returns the files only like: Scan("refs", -1) will return all files in "refs/tags/v1.0.0", etc.
-	Scan(path string, level int) (map[string][]int, error)
+	Scan(path string, include uint8, level int) (map[string][]int, error)
 
 	// [name]: [TYPE, SIZE] -> [TYPE: 0 = not found, 1 = file, 2 = dir, SIZE: size in bytes]
 	Stat(path string) []int
 
-	// Get the absolute path of a file
-	Abs(path string) string
-
 	// Create a dir recursively.
-	MkdirAll(path string) error
+	Mkdir(path string) error
 
 	// Change dir.
 	Cd(path string) error
+
+	// Get present working directory.
+	Pwd() string
 }
