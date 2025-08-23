@@ -12,7 +12,7 @@ func OpenRepo(conf *Config) (*Repo, error) {
 
 	var err error
 
-	if r.fs == nil {
+	if conf.FS == nil {
 		r.fs, err = NewDiskFS(conf.Dir)
 	} else {
 		r.fs, err = conf.FS(conf.Dir)
@@ -28,7 +28,7 @@ func InitRepo(conf *Config) (*Repo, error) {
 
 	var err error
 
-	if r.fs == nil {
+	if conf.FS == nil {
 		r.fs, err = NewDiskFS(conf.Dir)
 	} else {
 		r.fs, err = conf.FS(conf.Dir)
